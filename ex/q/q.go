@@ -7,7 +7,7 @@ package main
 import (
 	"flag"
 	"fmt"
-	"github.com/miekg/dns"
+	"github.com/Meyermagic/dns"
 	"net"
 	"os"
 	"strconv"

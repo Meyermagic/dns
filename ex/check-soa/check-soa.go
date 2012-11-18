@@ -4,7 +4,7 @@ package main
 import (
 	"errors"
 	"fmt"
-	"github.com/miekg/dns"
+	"github.com/Meyermagic/dns"
 	"os"
 	"strings"
 	"time"

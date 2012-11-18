@@ -4,7 +4,7 @@ package main
 
 import (
 	"fmt"
-	"github.com/miekg/dns"
+	"github.com/Meyermagic/dns"
 	"os"
 )
 
