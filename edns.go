@@ -33,8 +33,8 @@ import (
 
 // EDNS0 Option codes.
 const (
-	EDNS0LLQ         = 0x1    // not used
-	EDNS0UL          = 0x2    // not used
+	EDNS0LLQ         = 0x1    // in progress
+	EDNS0UL          = 0x2    // (not used) alias for EDNS0UPDATELEASE
 	EDNS0UPDATELEASE = 0x2    // update lease draft
 	EDNS0NSID        = 0x3    // nsid (RFC5001)
 	EDNS0SUBNET      = 0x50fa // client-subnet draft
@@ -319,4 +319,75 @@ func (e *EDNS0_UPDATE_LEASE) unpack(b []byte) {
 
 func (e *EDNS0_UPDATE_LEASE) String() string {
 	return strconv.Itoa(int(e.Lease))
+}
+
+//TODO: Actually EDNS0LLQ
+// The UPDATE_LEASE EDNS0 (draft RFC) option is used to tell the server to set
+// an expiration on an update RR. This is helpful for clients that cannot clean
+// up after themselves. This is a draft RFC and more information can be found at
+// http://files.dns-sd.org/draft-sekar-dns-ul.txt 
+//
+//	o := new(dns.RR_OPT)
+//	o.Hdr.Name = "."
+//	o.Hdr.Rrtype = dns.TypeOPT
+//	e := new(dns.EDNS0_UPDATE_LEASE)
+//	e.Code = dns.EDNS0UPDATELEASE
+//	e.Lease = 120 // in seconds
+//	o.Option = append(o.Option, e)
+
+type EDNS0_LLQ struct {
+	Code uint16 // Always EDNS0LLQ
+	//TODO: Spec says the whole (Length, code, fields) section can repeat
+	//Is this part of the normal multiple RR_Opt thing, or specific to LLQ?
+	//If LLQ-specific, I'll need to re-write this DNS Libary's handling of 
+	//EDNS0 packets, to allow us to unpack based on the length, too
+	Version   uint16
+	LLQOpcode uint16
+	ErrorCode uint16
+	LLQID     uint64
+	LeaseLife uint32
+}
+
+func (e *EDNS0_LLQ) Option() uint16 {
+	return EDNS0LLQ
+}
+
+// Copied: http://golang.org/src/pkg/net/dnsmsg.go
+func (e *EDNS0_LLQ) pack() ([]byte, error) {
+	b := make([]byte, 18)
+	b[0] = byte(e.Version >> 8)
+	b[1] = byte(e.Version)
+	b[2] = byte(e.LLQOpcode >> 8)
+	b[3] = byte(e.LLQOpcode)
+	b[4] = byte(e.ErrorCode >> 8)
+	b[5] = byte(e.ErrorCode)
+	b[6] = byte(e.LLQID >> 56)
+	b[7] = byte(e.LLQID >> 48)
+	b[8] = byte(e.LLQID >> 40)
+	b[9] = byte(e.LLQID >> 32)
+	b[10] = byte(e.LLQID >> 24)
+	b[11] = byte(e.LLQID >> 16)
+	b[12] = byte(e.LLQID >> 8)
+	b[13] = byte(e.LLQID)
+	b[14] = byte(e.LeaseLife >> 24)
+	b[15] = byte(e.LeaseLife >> 16)
+	b[16] = byte(e.LeaseLife >> 8)
+	b[17] = byte(e.LeaseLife)
+	return b, nil
+}
+
+func (e *EDNS0_LLQ) unpack(b []byte) {
+	e.Version = uint16(b[0])<<8 | uint16(b[1])
+	e.LLQOpcode = uint16(b[2])<<8 | uint16(b[3])
+	e.ErrorCode = uint16(b[4])<<8 | uint16(b[5])
+	e.LLQID = uint64(b[6])<<56 | uint64(b[7])<<48 | uint64(b[8])<<40 | uint64(b[9])<<32 | uint64(b[10])<<24 | uint64(b[11])<<16 | uint64(b[12])<<8 | uint64(b[13])
+	e.LeaseLife = uint32(b[14])<<24 | uint32(b[15])<<16 | uint32(b[16])<<8 | uint32(b[17])
+}
+
+func (e *EDNS0_LLQ) String() string {
+	return strconv.FormatUint(uint64(e.Version), 10) + " " +
+		strconv.FormatUint(uint64(e.LLQOpcode), 10) + " " +
+		strconv.FormatUint(uint64(e.ErrorCode), 10) + " " +
+		strconv.FormatUint(e.LLQID, 10) + " " +
+		strconv.FormatUint(uint64(e.LeaseLife), 10)
 }
