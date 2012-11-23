@@ -75,6 +75,8 @@ func (rr *RR_OPT) String() string {
 			s += "\n; SUBNET: " + o.String()
 		case *EDNS0_UPDATE_LEASE:
 			s += "\n; LEASE: " + o.String()
+		case *EDNS0_LLQ:
+			s += "\n; PARAMS: " + o.String()
 		}
 	}
 	return s
