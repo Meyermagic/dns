@@ -32,6 +32,15 @@ func SplitLabels(s string) []string {
 	return labels
 }
 
+//TODO: Handling escaping correctly?
+func JoinLabels(labels []string) string {
+	out = ""
+	for _, label := range labels {
+		out += label + "."
+	}
+	return out
+}
+
 // CompareLabels compares the strings s1 and s2 and
 // returns how many labels they have in common starting from the right.
 // The comparison stops at the first inequality. The labels are not downcased
