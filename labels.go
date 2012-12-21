@@ -34,7 +34,7 @@ func SplitLabels(s string) []string {
 
 //TODO: Handling escaping correctly?
 func JoinLabels(labels []string) string {
-	out = ""
+	out := ""
 	for _, label := range labels {
 		out += label + "."
 	}
