@@ -16,6 +16,7 @@ import (
 	"encoding/base32"
 	"encoding/base64"
 	"encoding/hex"
+	"fmt"
 	"math/rand"
 	"net"
 	"reflect"
@@ -26,34 +27,27 @@ import (
 const maxCompressionOffset = 2 << 13 // We have 14 bits for the compression pointer
 
 var (
-	ErrFqdn        error = &Error{Err: "domain must be fully qualified"}
-	ErrId          error = &Error{Err: "id mismatch"}
-	ErrRdata       error = &Error{Err: "bad rdata"}
-	ErrBuf         error = &Error{Err: "buffer size too small"}
-	ErrShortRead   error = &Error{Err: "short read"}
-	ErrConn        error = &Error{Err: "conn holds both UDP and TCP connection"}
-	ErrConnEmpty   error = &Error{Err: "conn has no connection"}
-	ErrServ        error = &Error{Err: "no servers could be reached"}
-	ErrKey         error = &Error{Err: "bad key"}
-	ErrPrivKey     error = &Error{Err: "bad private key"}
-	ErrKeySize     error = &Error{Err: "bad key size"}
-	ErrKeyAlg      error = &Error{Err: "bad key algorithm"}
-	ErrAlg         error = &Error{Err: "bad algorithm"}
-	ErrTime        error = &Error{Err: "bad time"}
-	ErrNoSig       error = &Error{Err: "no signature found"}
-	ErrSig         error = &Error{Err: "bad signature"}
-	ErrSecret      error = &Error{Err: "no secrets defined"}
-	ErrSigGen      error = &Error{Err: "bad signature generation"}
-	ErrAuth        error = &Error{Err: "bad authentication"}
-	ErrSoa         error = &Error{Err: "no SOA"}
-	ErrRRset       error = &Error{Err: "bad rrset"}
-	ErrDenialNsec3 error = &Error{Err: "no NSEC3 records"}
-	ErrDenialCe    error = &Error{Err: "no matching closest encloser found"}
-	ErrDenialNc    error = &Error{Err: "no covering NSEC3 found for next closer"}
-	ErrDenialSo    error = &Error{Err: "no covering NSEC3 found for source of synthesis"}
-	ErrDenialBit   error = &Error{Err: "type not denied in NSEC3 bitmap"}
-	ErrDenialWc    error = &Error{Err: "wildcard exist, but closest encloser is denied"}
-	ErrDenialHdr   error = &Error{Err: "message rcode conflicts with message content"}
+	ErrFqdn      error = &Error{Err: "domain must be fully qualified"}
+	ErrId        error = &Error{Err: "id mismatch"}
+	ErrRdata     error = &Error{Err: "bad rdata"}
+	ErrBuf       error = &Error{Err: "buffer size too small"}
+	ErrShortRead error = &Error{Err: "short read"}
+	ErrConn      error = &Error{Err: "conn holds both UDP and TCP connection"}
+	ErrConnEmpty error = &Error{Err: "conn has no connection"}
+	ErrServ      error = &Error{Err: "no servers could be reached"}
+	ErrKey       error = &Error{Err: "bad key"}
+	ErrPrivKey   error = &Error{Err: "bad private key"}
+	ErrKeySize   error = &Error{Err: "bad key size"}
+	ErrKeyAlg    error = &Error{Err: "bad key algorithm"}
+	ErrAlg       error = &Error{Err: "bad algorithm"}
+	ErrTime      error = &Error{Err: "bad time"}
+	ErrNoSig     error = &Error{Err: "no signature found"}
+	ErrSig       error = &Error{Err: "bad signature"}
+	ErrSecret    error = &Error{Err: "no secrets defined"}
+	ErrSigGen    error = &Error{Err: "bad signature generation"}
+	ErrAuth      error = &Error{Err: "bad authentication"}
+	ErrSoa       error = &Error{Err: "no SOA"}
+	ErrRRset     error = &Error{Err: "bad rrset"}
 )
 
 // A manually-unpacked version of (id, bits).
@@ -76,7 +70,6 @@ type MsgHdr struct {
 type Msg struct {
 	MsgHdr
 	Compress bool       // If true, the message will be compressed when converted to wire format.
-	Size     int        // Number of octects in the message received from the wire.
 	Question []Question // Holds the RR(s) of the question section.
 	Answer   []RR       // Holds the RR(s) of the answer section.
 	Ns       []RR       // Holds the RR(s) of the authority section.
@@ -84,7 +77,7 @@ type Msg struct {
 }
 
 // Map of strings for each RR wire type.
-var Rr_str = map[uint16]string{
+var TypeToString = map[uint16]string{
 	TypeCNAME:      "CNAME",
 	TypeHINFO:      "HINFO",
 	TypeTLSA:       "TSLA",
@@ -98,11 +91,16 @@ var Rr_str = map[uint16]string{
 	TypeMX:         "MX",
 	TypeWKS:        "WKS",
 	TypeNS:         "NS",
+	TypeNULL:       "NULL",
+	TypeAFSDB:      "AFSDB",
+	TypeX25:        "X25",
+	TypeISDN:       "ISDN",
 	TypePTR:        "PTR",
 	TypeRT:         "RT",
 	TypeSOA:        "SOA",
 	TypeTXT:        "TXT",
 	TypeSRV:        "SRV",
+	TypeATMA:       "ATMA",
 	TypeNAPTR:      "NAPTR",
 	TypeKX:         "KX",
 	TypeCERT:       "CERT",
@@ -114,6 +112,10 @@ var Rr_str = map[uint16]string{
 	TypeDS:         "DS",
 	TypeDHCID:      "DHCID",
 	TypeHIP:        "HIP",
+	TypeNINFO:      "NINFO",
+	TypeRKEY:       "RKEY",
+	TypeCDS:        "CDS",
+	TypeCAA:        "CAA",
 	TypeIPSECKEY:   "IPSECKEY",
 	TypeSSHFP:      "SSHFP",
 	TypeRRSIG:      "RRSIG",
@@ -123,6 +125,10 @@ var Rr_str = map[uint16]string{
 	TypeNSEC3PARAM: "NSEC3PARAM",
 	TypeTALINK:     "TALINK",
 	TypeSPF:        "SPF",
+	TypeNID:        "NID",
+	TypeL32:        "L32",
+	TypeL64:        "L64",
+	TypeLP:         "LP",
 	TypeTKEY:       "TKEY", // Meta RR
 	TypeTSIG:       "TSIG", // Meta RR
 	TypeAXFR:       "AXFR", // Meta RR
@@ -134,17 +140,17 @@ var Rr_str = map[uint16]string{
 }
 
 // Reverse, needed for string parsing.
-var Str_rr = reverseInt16(Rr_str)
-var Str_class = reverseInt16(Class_str)
+var StringToType = reverseInt16(TypeToString)
+var StringToClass = reverseInt16(ClassToString)
 
 // Map of opcodes strings.
-var Str_opcode = reverseInt(Opcode_str)
+var StringToOpcode = reverseInt(OpcodeToString)
 
 // Map of rcodes strings.
-var Str_rcode = reverseInt(Rcode_str)
+var StringToRcode = reverseInt(RcodeToString)
 
 // Map of strings for each CLASS wire type.
-var Class_str = map[uint16]string{
+var ClassToString = map[uint16]string{
 	ClassINET:   "IN",
 	ClassCSNET:  "CS",
 	ClassCHAOS:  "CH",
@@ -154,7 +160,7 @@ var Class_str = map[uint16]string{
 }
 
 // Map of strings for opcodes.
-var Opcode_str = map[int]string{
+var OpcodeToString = map[int]string{
 	OpcodeQuery:  "QUERY",
 	OpcodeIQuery: "IQUERY",
 	OpcodeStatus: "STATUS",
@@ -163,7 +169,7 @@ var Opcode_str = map[int]string{
 }
 
 // Map of strings for rcodes.
-var Rcode_str = map[int]string{
+var RcodeToString = map[int]string{
 	RcodeSuccess:        "NOERROR",
 	RcodeFormatError:    "FORMERR",
 	RcodeServerFailure:  "SERVFAIL",
@@ -217,14 +223,26 @@ func PackDomainName(s string, msg []byte, off int, compression map[string]int, c
 	// Emit sequence of counted strings, chopping at dots.
 	begin := 0
 	bs := []byte(s)
-	//	ls := len(bs)
-	lens := ls
 	for i := 0; i < ls; i++ {
 		if bs[i] == '\\' {
-			for j := i; j < lens-1; j++ {
+			for j := i; j < ls-1; j++ {
 				bs[j] = bs[j+1]
 			}
 			ls--
+			// check for \DDD
+			if off+1 > lenmsg {
+				return lenmsg, ErrBuf
+			}
+			if i+2 < ls && bs[i] >= '0' && bs[i] <= '9' &&
+				bs[i+1] >= '0' && bs[i+1] <= '9' &&
+				bs[i+2] >= '0' && bs[i+2] <= '9' {
+
+				bs[i] = byte((bs[i]-'0')*100 + (bs[i+1]-'0')*10 + (bs[i+2] - '0'))
+				for j := i + 1; j < ls-2; j++ {
+					bs[j] = bs[j+2]
+				}
+				ls -= 2
+			}
 			continue
 		}
 
@@ -328,10 +346,14 @@ Loop:
 				return "", lenmsg, ErrBuf
 			}
 			for j := off; j < off+c; j++ {
-				if msg[j] == '.' {
-					// literal dot, escape it
+				switch {
+				case msg[j] == '.': // literal dots
 					s += "\\."
-				} else {
+				case msg[j] < 32: // unprintable use \DDD
+					fallthrough
+				case msg[j] >= 127:
+					s += fmt.Sprintf("\\%03d", msg[j])
+				default:
 					s += string(msg[j])
 				}
 			}
@@ -441,6 +463,7 @@ func packStructValue(val reflect.Value, msg []byte, off int, compression map[str
 					return lenmsg, &Error{Err: "overflow packing a"}
 				}
 			case `dns:"aaaa"`:
+				// fv.Len TODO(mg) dynamisc updates?
 				if fv.Len() > net.IPv6len || off+fv.Len() > lenmsg {
 					return lenmsg, &Error{Err: "overflow packing aaaa"}
 				}
@@ -532,18 +555,35 @@ func packStructValue(val reflect.Value, msg []byte, off int, compression map[str
 			msg[off+3] = byte(i)
 			off += 4
 		case reflect.Uint64:
-			// Only used in TSIG, where it stops at 48 bits, so we discard the upper 16
-			if off+6 > lenmsg {
-				return lenmsg, &Error{Err: "overflow packing uint64 as uint48"}
+			switch val.Type().Field(i).Tag {
+			default:
+				if off+8 > lenmsg {
+					return lenmsg, &Error{Err: "overflow packing uint64"}
+				}
+				i := fv.Uint()
+				msg[off] = byte(i >> 56)
+				msg[off+1] = byte(i >> 48)
+				msg[off+2] = byte(i >> 40)
+				msg[off+3] = byte(i >> 32)
+				msg[off+4] = byte(i >> 24)
+				msg[off+5] = byte(i >> 16)
+				msg[off+6] = byte(i >> 8)
+				msg[off+7] = byte(i)
+				off += 8
+			case `dns:"uint48"`:
+				// Used in TSIG, where it stops at 48 bits, so we discard the upper 16
+				if off+6 > lenmsg {
+					return lenmsg, &Error{Err: "overflow packing uint64 as uint48"}
+				}
+				i := fv.Uint()
+				msg[off] = byte(i >> 40)
+				msg[off+1] = byte(i >> 32)
+				msg[off+2] = byte(i >> 24)
+				msg[off+3] = byte(i >> 16)
+				msg[off+4] = byte(i >> 8)
+				msg[off+5] = byte(i)
+				off += 6
 			}
-			i := fv.Uint()
-			msg[off] = byte(i >> 40)
-			msg[off+1] = byte(i >> 32)
-			msg[off+2] = byte(i >> 24)
-			msg[off+3] = byte(i >> 16)
-			msg[off+4] = byte(i >> 8)
-			msg[off+5] = byte(i)
-			off += 6
 		case reflect.String:
 			// There are multiple string encodings.
 			// The tag distinguishes ordinary strings from domain names.
@@ -671,14 +711,14 @@ func unpackStructValue(val reflect.Value, msg []byte, off int) (off1 int, err er
 				}
 				fv.Set(reflect.ValueOf(txt))
 			case `dns:"opt"`: // edns0
-				// TODO: multiple EDNS0 options
 				rdlength := int(val.FieldByName("Hdr").FieldByName("Rdlength").Uint())
 				if rdlength == 0 {
 					// This is an EDNS0 (OPT Record) with no rdata
-					// We can savely return here.
+					// We can safely return here.
 					break
 				}
 				edns := make([]EDNS0, 0)
+			Option:
 				code := uint16(0)
 				if off+2 > lenmsg {
 					return lenmsg, &Error{Err: "overflow unpacking opt"}
@@ -710,8 +750,10 @@ func unpackStructValue(val reflect.Value, msg []byte, off int) (off1 int, err er
 					edns = append(edns, e)
 					off = off1 + int(optlen)
 				}
+				if off < rdlength {
+					goto Option
+				}
 				fv.Set(reflect.ValueOf(edns))
-				// multiple EDNS codes?
 			case `dns:"a"`:
 				if off+net.IPv4len > lenmsg {
 					return lenmsg, &Error{Err: "overflow unpacking a"}
@@ -847,14 +889,23 @@ func unpackStructValue(val reflect.Value, msg []byte, off int) (off1 int, err er
 			fv.SetUint(uint64(uint32(msg[off])<<24 | uint32(msg[off+1])<<16 | uint32(msg[off+2])<<8 | uint32(msg[off+3])))
 			off += 4
 		case reflect.Uint64:
-			// This is *only* used in TSIG where the last 48 bits are occupied
-			// So for now, assume a uint48 (6 bytes)
-			if off+6 > lenmsg {
-				return lenmsg, &Error{Err: "overflow unpacking uint64 as uint48"}
+			switch val.Type().Field(i).Tag {
+			default:
+				if off+8 > lenmsg {
+					return lenmsg, &Error{Err: "overflow unpacking uint64"}
+				}
+				fv.SetUint(uint64(uint64(msg[off])<<56 | uint64(msg[off+1])<<48 | uint64(msg[off+2])<<40 |
+					uint64(msg[off+3])<<32 | uint64(msg[off+4])<<24 | uint64(msg[off+5])<<16 | uint64(msg[off+6])<<8 | uint64(msg[off+7])))
+				off += 8
+			case `dns:"uint48"`:
+				// Used in TSIG where the last 48 bits are occupied, so for now, assume a uint48 (6 bytes)
+				if off+6 > lenmsg {
+					return lenmsg, &Error{Err: "overflow unpacking uint64 as uint48"}
+				}
+				fv.SetUint(uint64(uint64(msg[off])<<40 | uint64(msg[off+1])<<32 | uint64(msg[off+2])<<24 | uint64(msg[off+3])<<16 |
+					uint64(msg[off+4])<<8 | uint64(msg[off+5])))
+				off += 6
 			}
-			fv.SetUint(uint64(uint64(msg[off])<<40 | uint64(msg[off+1])<<32 | uint64(msg[off+2])<<24 | uint64(msg[off+3])<<16 |
-				uint64(msg[off+4])<<8 | uint64(msg[off+5])))
-			off += 6
 		case reflect.String:
 			var s string
 			switch val.Type().Field(i).Tag {
@@ -888,7 +939,7 @@ func unpackStructValue(val reflect.Value, msg []byte, off int) (off1 int, err er
 			case `dns:"size-base32"`:
 				var size int
 				switch val.Type().Name() {
-				case "RR_NSEC3":
+				case "NSEC3":
 					switch val.Type().Field(i).Name {
 					case "NextDomain":
 						name := val.FieldByName("HashLength")
@@ -904,7 +955,7 @@ func unpackStructValue(val reflect.Value, msg []byte, off int) (off1 int, err er
 				// a "size" string, but it must be encoded in hex in the string
 				var size int
 				switch val.Type().Name() {
-				case "RR_NSEC3":
+				case "NSEC3":
 					switch val.Type().Field(i).Name {
 					case "Salt":
 						name := val.FieldByName("SaltLength")
@@ -913,7 +964,7 @@ func unpackStructValue(val reflect.Value, msg []byte, off int) (off1 int, err er
 						name := val.FieldByName("HashLength")
 						size = int(name.Uint())
 					}
-				case "RR_TSIG":
+				case "TSIG":
 					switch val.Type().Field(i).Name {
 					case "MAC":
 						name := val.FieldByName("MACSize")
@@ -1014,7 +1065,8 @@ func packBase32(s []byte) ([]byte, error) {
 	return buf, nil
 }
 
-// Resource record packer.
+// Resource record packer, pack rr into msg[off:]. See PackDomainName for documentation
+// about the compression.
 func PackRR(rr RR, msg []byte, off int, compression map[string]int, compress bool) (off1 int, err error) {
 	if rr == nil {
 		return len(msg), &Error{Err: "nil rr"}
@@ -1028,7 +1080,7 @@ func PackRR(rr RR, msg []byte, off int, compression map[string]int, compress boo
 	return off1, nil
 }
 
-// Resource record unpacker.
+// Resource record unpacker, unpack msg[off:] into an RR.
 func UnpackRR(msg []byte, off int) (rr RR, off1 int, err error) {
 	// unpack just the header, to find the rr type and length
 	var h RR_Header
@@ -1040,7 +1092,7 @@ func UnpackRR(msg []byte, off int) (rr RR, off1 int, err error) {
 	// make an rr of that type and re-unpack.
 	mk, known := rr_mk[h.Rrtype]
 	if !known {
-		rr = new(RR_RFC3597)
+		rr = new(RFC3597)
 	} else {
 		rr = mk()
 	}
@@ -1086,8 +1138,8 @@ func (h *MsgHdr) String() string {
 		return "<nil> MsgHdr"
 	}
 
-	s := ";; opcode: " + Opcode_str[h.Opcode]
-	s += ", status: " + Rcode_str[h.Rcode]
+	s := ";; opcode: " + OpcodeToString[h.Opcode]
+	s += ", status: " + RcodeToString[h.Rcode]
 	s += ", id: " + strconv.Itoa(int(h.Id)) + "\n"
 
 	s += ";; flags:"

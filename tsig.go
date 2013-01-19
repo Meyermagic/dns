@@ -25,7 +25,7 @@
 //	m := new(dns.Msg)
 //	m.SetAxfr("miek.nl.") 
 //	m.SetTsig("axfr.", dns.HmacMD5, 300, time.Now().Unix())
-//	t, err := c.XfrReceive(m, "85.223.71.124:53")
+//	t, err := c.TransferIn(m, "85.223.71.124:53")
 //	for r := range t { /* ... */ }
 //
 // You can now read the records from the AXFR as they come in. Each envelope is checked with TSIG.
@@ -49,7 +49,7 @@
 //				// *Msg r has an TSIG records and it was not valided
 //			}
 //		}
-//		w.Write(m)
+//		w.WriteMsg(m)
 //	}
 package dns
 
@@ -73,10 +73,10 @@ const (
 	HmacSHA256 = "hmac-sha256."
 )
 
-type RR_TSIG struct {
+type TSIG struct {
 	Hdr        RR_Header
 	Algorithm  string `dns:"domain-name"`
-	TimeSigned uint64
+	TimeSigned uint64 `dns:"uint48"`
 	Fudge      uint16
 	MACSize    uint16
 	MAC        string `dns:"size-hex"`
@@ -86,13 +86,13 @@ type RR_TSIG struct {
 	OtherData  string `dns:"size-hex"`
 }
 
-func (rr *RR_TSIG) Header() *RR_Header {
+func (rr *TSIG) Header() *RR_Header {
 	return &rr.Hdr
 }
 
 // TSIG has no official presentation format, but this will suffice.
 
-func (rr *RR_TSIG) String() string {
+func (rr *TSIG) String() string {
 	s := "\n;; TSIG PSEUDOSECTION:\n"
 	s += rr.Hdr.String() +
 		" " + rr.Algorithm +
@@ -107,13 +107,13 @@ func (rr *RR_TSIG) String() string {
 	return s
 }
 
-func (rr *RR_TSIG) Len() int {
+func (rr *TSIG) Len() int {
 	return rr.Hdr.Len() + len(rr.Algorithm) + 1 + 6 +
 		4 + len(rr.MAC)/2 + 1 + 6 + len(rr.OtherData)/2 + 1
 }
 
-func (rr *RR_TSIG) Copy() RR {
-	return &RR_TSIG{*rr.Hdr.CopyHeader(), rr.Algorithm, rr.TimeSigned, rr.Fudge, rr.MACSize, rr.MAC, rr.OrigId, rr.Error, rr.OtherLen, rr.OtherData}
+func (rr *TSIG) Copy() RR {
+	return &TSIG{*rr.Hdr.CopyHeader(), rr.Algorithm, rr.TimeSigned, rr.Fudge, rr.MACSize, rr.MAC, rr.OrigId, rr.Error, rr.OtherLen, rr.OtherData}
 }
 
 // The following values must be put in wireformat, so that the MAC can be calculated.
@@ -125,7 +125,7 @@ type tsigWireFmt struct {
 	Ttl   uint32
 	// Rdata of the TSIG
 	Algorithm  string `dns:"domain-name"`
-	TimeSigned uint64
+	TimeSigned uint64 `dns:"uint48"`
 	Fudge      uint16
 	// MACSize, MAC and OrigId excluded
 	Error     uint16
@@ -142,7 +142,7 @@ type macWireFmt struct {
 
 // 3.3. Time values used in TSIG calculations
 type timerWireFmt struct {
-	TimeSigned uint64
+	TimeSigned uint64 `dns:"uint48"`
 	Fudge      uint16
 }
 
@@ -164,7 +164,7 @@ func TsigGenerate(m *Msg, secret, requestMAC string, timersOnly bool) ([]byte, s
 		return nil, "", err
 	}
 
-	rr := m.Extra[len(m.Extra)-1].(*RR_TSIG)
+	rr := m.Extra[len(m.Extra)-1].(*TSIG)
 	m.Extra = m.Extra[0 : len(m.Extra)-1] // kill the TSIG from the msg
 	mbuf, err := m.Pack()
 	if err != nil {
@@ -172,7 +172,7 @@ func TsigGenerate(m *Msg, secret, requestMAC string, timersOnly bool) ([]byte, s
 	}
 	buf := tsigBuffer(mbuf, rr, requestMAC, timersOnly)
 
-	t := new(RR_TSIG)
+	t := new(TSIG)
 	var h hash.Hash
 	switch rr.Algorithm {
 	case HmacMD5:
@@ -220,7 +220,6 @@ func TsigVerify(msg []byte, secret, requestMAC string, timersOnly bool) error {
 	}
 
 	buf := tsigBuffer(stripped, tsig, requestMAC, timersOnly)
-
 	ti := uint64(time.Now().Unix()) - tsig.TimeSigned
 	if uint64(tsig.Fudge) < ti {
 		return ErrTime
@@ -245,7 +244,7 @@ func TsigVerify(msg []byte, secret, requestMAC string, timersOnly bool) error {
 }
 
 // Create a wiredata buffer for the MAC calculation.
-func tsigBuffer(msgbuf []byte, rr *RR_TSIG, requestMAC string, timersOnly bool) []byte {
+func tsigBuffer(msgbuf []byte, rr *TSIG, requestMAC string, timersOnly bool) []byte {
 	var buf []byte
 	if rr.TimeSigned == 0 {
 		rr.TimeSigned = uint64(time.Now().Unix())
@@ -295,13 +294,13 @@ func tsigBuffer(msgbuf []byte, rr *RR_TSIG, requestMAC string, timersOnly bool) 
 }
 
 // Strip the TSIG from the raw message
-func stripTsig(msg []byte) ([]byte, *RR_TSIG, error) {
+func stripTsig(msg []byte) ([]byte, *TSIG, error) {
 	// Copied from msg.go's Unpack()
 	// Header.
 	var dh Header
 	var err error
 	dns := new(Msg)
-	rr := new(RR_TSIG)
+	rr := new(TSIG)
 	off := 0
 	tsigoff := 0
 	if off, err = UnpackStruct(&dh, msg, off); err != nil {
@@ -346,7 +345,7 @@ func stripTsig(msg []byte) ([]byte, *RR_TSIG, error) {
 			return nil, nil, err
 		}
 		if dns.Extra[i].Header().Rrtype == TypeTSIG {
-			rr = dns.Extra[i].(*RR_TSIG)
+			rr = dns.Extra[i].(*TSIG)
 			// Adjust Arcount.
 			arcount, _ := unpackUint16(msg, 10)
 			msg[10], msg[11] = packUint16(arcount - 1)

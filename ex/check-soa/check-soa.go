@@ -24,7 +24,7 @@ func localQuery(qname string, qtype uint16) (*dns.Msg, error) {
 	localm.SetQuestion(qname, qtype)
 	for i := range conf.Servers {
 		server := conf.Servers[i]
-		r, err := localc.Exchange(localm, server+":"+conf.Port)
+		r, _, err := localc.Exchange(localm, server+":"+conf.Port)
 		if r == nil || r.Rcode == dns.RcodeNameError || r.Rcode == dns.RcodeSuccess {
 			return r, err
 		}
@@ -66,8 +66,8 @@ func main() {
 	numNS := 0
 	for _, ans := range r.Answer {
 		switch ans.(type) {
-		case *dns.RR_NS:
-			nameserver := ans.(*dns.RR_NS).Ns
+		case *dns.NS:
+			nameserver := ans.(*dns.NS).Ns
 			numNS += 1
 			ips := make([]string, 0)
 			fmt.Printf("%s : ", nameserver)
@@ -77,13 +77,13 @@ func main() {
 				os.Exit(1)
 			}
 			if ra.Rcode != dns.RcodeSuccess {
-				fmt.Printf("Error getting the IPv4 address of %s: %s\n", nameserver, dns.Rcode_str[ra.Rcode])
+				fmt.Printf("Error getting the IPv4 address of %s: %s\n", nameserver, dns.RcodeToString[ra.Rcode])
 				os.Exit(1)
 			}
 			for _, ansa := range ra.Answer {
 				switch ansa.(type) {
-				case *dns.RR_A:
-					ips = append(ips, ansa.(*dns.RR_A).A.String())
+				case *dns.A:
+					ips = append(ips, ansa.(*dns.A).A.String())
 				}
 			}
 			raaaa, err := localQuery(nameserver, dns.TypeAAAA)
@@ -92,13 +92,13 @@ func main() {
 				os.Exit(1)
 			}
 			if raaaa.Rcode != dns.RcodeSuccess {
-				fmt.Printf("Error getting the IPv6 address of %s: %s\n", nameserver, dns.Rcode_str[raaaa.Rcode])
+				fmt.Printf("Error getting the IPv6 address of %s: %s\n", nameserver, dns.RcodeToString[raaaa.Rcode])
 				os.Exit(1)
 			}
 			for _, ansaaaa := range raaaa.Answer {
 				switch ansaaaa.(type) {
-				case *dns.RR_AAAA:
-					ips = append(ips, ansaaaa.(*dns.RR_AAAA).AAAA.String())
+				case *dns.AAAA:
+					ips = append(ips, ansaaaa.(*dns.AAAA).AAAA.String())
 				}
 			}
 			if len(ips) == 0 {
@@ -114,7 +114,7 @@ func main() {
 				} else {
 					nsAddressPort = ip + ":53"
 				}
-				soa, err := c.Exchange(m, nsAddressPort)
+				soa, _, err := c.Exchange(m, nsAddressPort)
 				// TODO: retry if timeout? Otherwise, one lost UDP packet and it is the end
 				if soa == nil {
 					success = false
@@ -123,7 +123,7 @@ func main() {
 				}
 				if soa.Rcode != dns.RcodeSuccess {
 					success = false
-					fmt.Printf("%s (%s) ", ips, dns.Rcode_str[soa.Rcode])
+					fmt.Printf("%s (%s) ", ips, dns.RcodeToString[soa.Rcode])
 					goto Next
 				}
 				if len(soa.Answer) == 0 { // May happen if the server is a recursor, not authoritative, since we query with RD=0 
@@ -133,10 +133,10 @@ func main() {
 				}
 				rsoa := soa.Answer[0]
 				switch rsoa.(type) {
-				case *dns.RR_SOA:
+				case *dns.SOA:
 					if soa.MsgHdr.Authoritative {
 						// TODO: test if all name servers have the same serial ?
-						fmt.Printf("%s (%d) ", ips, rsoa.(*dns.RR_SOA).Serial)
+						fmt.Printf("%s (%d) ", ips, rsoa.(*dns.SOA).Serial)
 					} else {
 						success = false
 						fmt.Printf("%s (not authoritative) ", ips)

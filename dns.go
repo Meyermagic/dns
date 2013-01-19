@@ -16,7 +16,7 @@
 // Resource records are native types. They are not stored in wire format.
 // Basic usage pattern for creating a new resource record:
 //
-//      r := new(dns.RR_MX)
+//      r := new(dns.MX)
 //      r.Hdr = dns.RR_Header{Name: "miek.nl.", Rrtype: dns.TypeMX, Class: dns.ClassINET, Ttl: 3600}
 //      r.Pref = 10
 //      r.Mx = "mx.miek.nl."
@@ -59,10 +59,9 @@
 // server configured on 127.0.0.1 and port 53:
 //
 //      c := new(Client)
-//      in, err := c.Exchange(m1, "127.0.0.1:53")
+//      in, rtt, err := c.Exchange(m1, "127.0.0.1:53")
 //
-// An asynchronous query is also possible, see client.Do or client.DoRtt, when
-// you are interested in the round trip time of the exchange.
+// For asynchronous queries it is easy to wrap Exchange() in a goroutine.
 //
 // From a birds eye view a dns message consists out of four sections.
 // The question section: in.Question, the answer section: in.Answer,
@@ -72,7 +71,7 @@
 // use pattern for accessing the rdata of a TXT RR as the first RR in 
 // the Answer section:
 //
-//	if t, ok := in.Answer[0].(*RR_TXT); ok {
+//	if t, ok := in.Answer[0].(*TXT); ok {
 //		// do something with t.Txt
 //	}
 package dns
@@ -133,9 +132,10 @@ type RR_Header struct {
 	Rdlength uint16 // length of data after header
 }
 
-func (h *RR_Header) Header() *RR_Header {
-	return h
-}
+func (h *RR_Header) Header() *RR_Header { return h }
+
+// Just to imlement the RR interface
+func (h *RR_Header) Copy() RR { return nil }
 
 func (h *RR_Header) CopyHeader() *RR_Header {
 	r := new(RR_Header)
@@ -145,11 +145,6 @@ func (h *RR_Header) CopyHeader() *RR_Header {
 	r.Ttl = h.Ttl
 	r.Rdlength = h.Rdlength
 	return r
-}
-
-// Just to imlement the RR interface
-func (h *RR_Header) Copy() RR {
-	return nil
 }
 
 func (h *RR_Header) String() string {
@@ -167,14 +162,14 @@ func (h *RR_Header) String() string {
 	}
 	s = s + strconv.FormatInt(int64(h.Ttl), 10) + "\t"
 
-	if _, ok := Class_str[h.Class]; ok {
-		s += Class_str[h.Class] + "\t"
+	if _, ok := ClassToString[h.Class]; ok {
+		s += ClassToString[h.Class] + "\t"
 	} else {
 		s += "CLASS" + strconv.Itoa(int(h.Class)) + "\t"
 	}
 
-	if _, ok := Rr_str[h.Rrtype]; ok {
-		s += Rr_str[h.Rrtype] + "\t"
+	if _, ok := TypeToString[h.Rrtype]; ok {
+		s += TypeToString[h.Rrtype] + "\t"
 	} else {
 		s += "TYPE" + strconv.Itoa(int(h.Rrtype)) + "\t"
 	}

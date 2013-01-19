@@ -8,19 +8,16 @@ import (
 	"strings"
 )
 
-// Only used when debugging the parser itself.
-var _DEBUG = false
+var _DEBUG = false // Only used when debugging the parser itself.  
 
-// Complete unsure about the correctness of this value?
-// Large blobs of base64 code might get longer than this....
-const maxTok = 2048
+const maxTok = 2048 // Largest token we can return.
 
 // Tokinize a RFC 1035 zone file. The tokenizer will normalize it:
 // * Add ownernames if they are left blank;
 // * Suppress sequences of spaces;
-// * Make each RR fit on one line (NEWLINE is send as last)
+// * Make each RR fit on one line (_NEWLINE is send as last)
 // * Handle comments: ;
-// * Handle braces.
+// * Handle braces - anywhere.
 const (
 	// Zonefile
 	_EOF = iota
@@ -44,7 +41,7 @@ const (
 	_EXPECT_OWNER_BL       // Whitespace after the ownername
 	_EXPECT_ANY            // Expect rrtype, ttl or class
 	_EXPECT_ANY_NOCLASS    // Expect rrtype or ttl
-	_EXPECT_ANY_NOCLASS_BL // The Whitespace after _EXPECT_ANY_NOCLASS
+	_EXPECT_ANY_NOCLASS_BL // The whitespace after _EXPECT_ANY_NOCLASS
 	_EXPECT_ANY_NOTTL      // Expect rrtype or class
 	_EXPECT_ANY_NOTTL_BL   // Whitespace after _EXPECT_ANY_NOTTL
 	_EXPECT_RRTYPE         // Expect rrtype
@@ -78,12 +75,12 @@ func (e *ParseError) Error() (s string) {
 }
 
 type lex struct {
-	token  string // Text of the token
-	err    bool   // When true, token text has lexer error 
-	value  uint8  // Value: _STRING, _BLANK, etc.
-	line   int    // Line in the file
-	column int    // Column in the file
-	torc   uint16 // Type or class as parsed in the lexer, we only need to look this up in the grammar
+	token  string // text of the token
+	err    bool   // when true, token text has lexer error 
+	value  uint8  // value: _STRING, _BLANK, etc.
+	line   int    // line in the file
+	column int    // column in the file
+	torc   uint16 // type or class as parsed in the lexer, we only need to look this up in the grammar
 }
 
 // Tokens are returned when a zone file is parsed.
@@ -173,9 +170,6 @@ func parseZone(r io.Reader, origin, f string, t chan Token, include int) {
 	var defttl uint32 = defaultTtl
 	var prevName string
 	for l := range c {
-		if _DEBUG {
-			fmt.Printf("[%v]\n", l)
-		}
 		// Lexer spotted an error already
 		if l.err == true {
 			t <- Token{Error: &ParseError{f, l.token, l}}
@@ -233,7 +227,8 @@ func parseZone(r io.Reader, origin, f string, t chan Token, include int) {
 					return
 				} else {
 					h.Ttl = ttl
-					defttl = ttl
+					// Don't about the defttl, we should take the $TTL value
+					// defttl = ttl
 				}
 				st = _EXPECT_ANY_NOTTL_BL
 
@@ -252,8 +247,32 @@ func parseZone(r io.Reader, origin, f string, t chan Token, include int) {
 				t <- Token{Error: &ParseError{f, "expecting $INCLUDE value, not this...", l}}
 				return
 			}
-			if e := slurpRemainder(c, f); e != nil {
-				t <- Token{Error: e}
+			neworigin := origin // There may be optionally a new origin set after the filename, if not use current one
+			l := <-c
+			switch l.value {
+			case _BLANK:
+				l := <-c
+				if l.value == _STRING {
+					if _, _, ok := IsDomainName(l.token); !ok {
+						t <- Token{Error: &ParseError{f, "bad origin name", l}}
+						return
+					}
+					// a new origin is specified.
+					if !IsFqdn(l.token) {
+						if origin != "." { // Prevent .. endings
+							neworigin = l.token + "." + origin
+						} else {
+							neworigin = l.token + origin
+						}
+					} else {
+						neworigin = l.token
+					}
+				}
+			case _NEWLINE, _EOF:
+				// Ok
+			default:
+				t <- Token{Error: &ParseError{f, "garbage after $INCLUDE", l}}
+				return
 			}
 			// Start with the new file
 			r1, e1 := os.Open(l.token)
@@ -265,7 +284,7 @@ func parseZone(r io.Reader, origin, f string, t chan Token, include int) {
 				t <- Token{Error: &ParseError{f, "too deeply nested $INCLUDE", l}}
 				return
 			}
-			parseZone(r1, l.token, origin, t, include+1)
+			parseZone(r1, l.token, neworigin, t, include+1)
 			st = _EXPECT_OWNER_DIR
 		case _EXPECT_DIRTTL_BL:
 			if l.value != _BLANK {
@@ -302,6 +321,10 @@ func parseZone(r io.Reader, origin, f string, t chan Token, include int) {
 			}
 			if e := slurpRemainder(c, f); e != nil {
 				t <- Token{Error: e}
+			}
+			if _, _, ok := IsDomainName(l.token); !ok {
+				t <- Token{Error: &ParseError{f, "bad origin name", l}}
+				return
 			}
 			if !IsFqdn(l.token) {
 				if origin != "." { // Prevent .. endings
@@ -349,7 +372,7 @@ func parseZone(r io.Reader, origin, f string, t chan Token, include int) {
 					return
 				} else {
 					h.Ttl = ttl
-					defttl = ttl
+					// defttl = ttl // don't set the defttl here
 				}
 				st = _EXPECT_ANY_NOTTL_BL
 			default:
@@ -388,7 +411,7 @@ func parseZone(r io.Reader, origin, f string, t chan Token, include int) {
 					return
 				} else {
 					h.Ttl = ttl
-					defttl = ttl
+					// defttl = ttl // don't set the def ttl anymore
 				}
 				st = _EXPECT_RRTYPE_BL
 			case _RRTYPE:
@@ -450,6 +473,9 @@ func zlexer(s *scan, c chan lex) {
 		if stri > maxTok {
 			l.token = "tok length insufficient for parsing"
 			l.err = true
+			if _DEBUG {
+				fmt.Printf("[%+v]", l.token)
+			}
 			c <- l
 			return
 		}
@@ -467,7 +493,7 @@ func zlexer(s *scan, c chan lex) {
 				break
 			}
 			if stri == 0 {
-				// Space directly as the beginnin, handled in the grammar
+				// Space directly in the beginning, handled in the grammar
 			} else if owner {
 				// If we have a string and its the first, make it an owner
 				l.value = _OWNER
@@ -483,13 +509,16 @@ func zlexer(s *scan, c chan lex) {
 				case "$GENERATE":
 					l.value = _DIRGENERATE
 				}
+				if _DEBUG {
+					fmt.Printf("[7 %+v]", l.token)
+				}
 				c <- l
 			} else {
 				l.value = _STRING
 				l.token = string(str[:stri])
 
 				if !rrtype {
-					if t, ok := Str_rr[strings.ToUpper(l.token)]; ok {
+					if t, ok := StringToType[strings.ToUpper(l.token)]; ok {
 						l.value = _RRTYPE
 						l.torc = t
 						rrtype = true
@@ -498,6 +527,7 @@ func zlexer(s *scan, c chan lex) {
 							if t, ok := typeToInt(l.token); !ok {
 								l.token = "unknown RR type"
 								l.err = true
+								// no lexer debug
 								c <- l
 								return
 							} else {
@@ -506,7 +536,7 @@ func zlexer(s *scan, c chan lex) {
 							}
 						}
 					}
-					if t, ok := Str_class[strings.ToUpper(l.token)]; ok {
+					if t, ok := StringToClass[strings.ToUpper(l.token)]; ok {
 						l.value = _CLASS
 						l.torc = t
 					} else {
@@ -514,6 +544,7 @@ func zlexer(s *scan, c chan lex) {
 							if t, ok := classToInt(l.token); !ok {
 								l.token = "unknown class"
 								l.err = true
+								// no lexer debug
 								c <- l
 								return
 							} else {
@@ -523,6 +554,9 @@ func zlexer(s *scan, c chan lex) {
 						}
 					}
 				}
+				if _DEBUG {
+					fmt.Printf("[6 %+v]", l.token)
+				}
 				c <- l
 			}
 			stri = 0
@@ -530,6 +564,9 @@ func zlexer(s *scan, c chan lex) {
 			if !space && !commt {
 				l.value = _BLANK
 				l.token = " "
+				if _DEBUG {
+					fmt.Printf("[5 %+v]", l.token)
+				}
 				c <- l
 			}
 			owner = false
@@ -550,6 +587,9 @@ func zlexer(s *scan, c chan lex) {
 			if stri > 0 {
 				l.value = _STRING
 				l.token = string(str[:stri])
+				if _DEBUG {
+					fmt.Printf("[4 %+v]", l.token)
+				}
 				c <- l
 				stri = 0
 			}
@@ -577,6 +617,9 @@ func zlexer(s *scan, c chan lex) {
 					owner = true
 					l.value = _NEWLINE
 					l.token = "\n"
+					if _DEBUG {
+						fmt.Printf("[3 %+v]", l.token)
+					}
 					c <- l
 				}
 				break
@@ -588,15 +631,22 @@ func zlexer(s *scan, c chan lex) {
 					l.value = _STRING
 					l.token = string(str[:stri])
 					if !rrtype {
-						if _, ok := Str_rr[strings.ToUpper(l.token)]; ok {
+						if t, ok := StringToType[strings.ToUpper(l.token)]; ok {
 							l.value = _RRTYPE
+							l.torc = t
 							rrtype = true
 						}
+					}
+					if _DEBUG {
+						fmt.Printf("[2 %+v]", l.token)
 					}
 					c <- l
 				}
 				l.value = _NEWLINE
 				l.token = "\n"
+				if _DEBUG {
+					fmt.Printf("[1 %+v]", l.token)
+				}
 				c <- l
 				stri = 0
 				commt = false
@@ -632,6 +682,9 @@ func zlexer(s *scan, c chan lex) {
 			if stri != 0 {
 				l.value = _STRING
 				l.token = string(str[:stri])
+				if _DEBUG {
+					fmt.Printf("[%+v]", l.token)
+				}
 				c <- l
 				stri = 0
 			}
@@ -660,6 +713,9 @@ func zlexer(s *scan, c chan lex) {
 				if brace < 0 {
 					l.token = "extra closing brace"
 					l.err = true
+					if _DEBUG {
+						fmt.Printf("[%+v]", l.token)
+					}
 					c <- l
 					return
 				}
@@ -682,6 +738,9 @@ func zlexer(s *scan, c chan lex) {
 		// Send remainder
 		l.token = string(str[:stri])
 		l.value = _STRING
+		if _DEBUG {
+			fmt.Printf("[%+v]", l.token)
+		}
 		c <- l
 	}
 }
@@ -825,4 +884,22 @@ func slurpRemainder(c chan lex, f string) *ParseError {
 		return &ParseError{f, "garbage after rdata", l}
 	}
 	return nil
+}
+
+// Parse a 64 bit-like ipv6 address: "0014:4fff:ff20:ee64"
+// Used for NID and L64 record.
+func stringToNodeID(l lex) (uint64, *ParseError) {
+	if len(l.token) < 19 {
+		return 0, &ParseError{l.token, "bad NID/L64 NodeID/Locator64", l}
+	}
+	// There must be three colons at fixes postitions, if not its a parse error
+	if l.token[4] != ':' && l.token[9] != ':' && l.token[14] != ':' {
+		return 0, &ParseError{l.token, "bad NID/L64 NodeID/Locator64", l}
+	}
+	s := l.token[0:4] + l.token[5:9] + l.token[10:14] + l.token[15:19]
+	u, e := strconv.ParseUint(s, 16, 64)
+	if e != nil {
+		return 0, &ParseError{l.token, "bad NID/L64 NodeID/Locator64", l}
+	}
+	return u, nil
 }

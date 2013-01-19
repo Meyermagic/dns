@@ -27,8 +27,7 @@ If you like this, you may also be interested in:
     * Reply speed around ~ 50K qps (faster hardware results in more qps);
     * Parsing RRs with  ~ 100K RR/s, that's 5M records in about 50 seconds;
 * Server side programming (mimicking the net/http package);
-* Client side programming with asynchronous calls;
-* Asynchronous queries/replies for client and server;
+* Client side programming;
 * DNSSEC: signing, validating and key generation for DSA, RSA and ECDSA;
 * EDNS0, NSID;
 * AXFR/IXFR;
@@ -42,14 +41,16 @@ Miek Gieben  -  2010-2012  -  miek@miek.nl
 # Building
 
 Building is done with the `go` tool. If you have setup your GOPATH
-correctly the following should work:
+correctly, the following should work:
 
     go get github.com/miekg/dns
     go build dns
 
-Sample programs can be found in the `ex` directory. They can 
-also be build with: `go build`.
-
+A short "how to use the API" is at the beginning of dns.go (this also will show
+when you call `go doc github.com/miekg/dns`. Sample
+programs can be found in the `ex` directory. They can also be build
+with: `go build`.
+ 
 ## Supported RFCs
 
 *all of them*
@@ -86,6 +87,7 @@ also be build with: `go build`.
 * 5702 - SHA2 in the DNS
 * 5936 - AXFR
 * 6605 - ECDSA
+* 6742 - ILNP DNS
 * xxxx - URI record (draft)
 * xxxx - EDNS0 DNS Update Lease (draft)
 
