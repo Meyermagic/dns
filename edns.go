@@ -387,9 +387,9 @@ func (e *EDNS0_LLQ) unpack(b []byte) {
 }
 
 func (e *EDNS0_LLQ) String() string {
-	return strconv.FormatUint(uint64(e.Version), 10) + " " +
+	return "(" + strconv.FormatUint(uint64(e.Version), 10) + " " +
 		strconv.FormatUint(uint64(e.LLQOpcode), 10) + " " +
 		strconv.FormatUint(uint64(e.ErrorCode), 10) + " " +
 		strconv.FormatUint(e.LLQID, 10) + " " +
-		strconv.FormatUint(uint64(e.LeaseLife), 10)
+		strconv.FormatUint(uint64(e.LeaseLife), 10) + ")"
 }
